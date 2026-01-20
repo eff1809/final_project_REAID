@@ -1,0 +1,7 @@
+#untuk:
+# Deployment 
+# agar lebih profesional
+
+streamlit
+transformers
+torch
