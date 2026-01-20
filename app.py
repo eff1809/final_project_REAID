@@ -13,9 +13,9 @@ from dataclasses import dataclass
 
 @dataclass
 class ModelConfig:
-    summarization_model: str = "facebook/bart-large-cnn"
-    qa_model: str = "deepset/roberta-base-squad2"
-    quiz_model: str = "google/flan-t5-base"
+    summarization_model: str = "facebook/bart-large-cnn" #model ringkasan
+    qa_model: str = "deepset/roberta-base-squad2" #model tanya jawab
+    quiz_model: str = "google/flan-t5-base" #model pembuat kuis
 
 
 # ==============================
@@ -46,7 +46,7 @@ class StudyBuddyAI:
 # STREAMLIT UI
 # ==============================
 
-st.set_page_config(page_title="AI Study Buddy", page_icon="📚")
+st.set_page_config(page_title="AI Study Buddy", page_icon="📚") 
 
 st.title("📚 AI Study Buddy")
 st.write("AI pendamping belajar untuk merangkum materi, tanya jawab, dan membuat kuis otomatis.")
