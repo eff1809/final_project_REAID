@@ -188,22 +188,60 @@ class StudyBuddyAI:
     #     )
     #     return result["answer"]
     
+# def ask(self, context: str, question: str) -> str:
+#     # Batasi konteks agar tidak terlalu panjang
+#     inputs = self.qa.tokenizer(
+#         context,
+#         max_length=512,
+#         truncation=True,
+#         return_tensors="pt"
+#     )
+
+#     truncated_context = self.qa.tokenizer.decode(
+#         inputs["input_ids"][0],
+#         skip_special_tokens=True
+#     )
+
+#     result = self.qa(
+#         question=question,
+#         context=truncated_context
+#     )
+
+#     if result["score"] < 0.2:
+#         return "Jawaban tidak ditemukan secara jelas pada materi yang diberikan."
+
+#     return result["answer"]
+
+
     def ask(self, context: str, question: str) -> str:
-        prompt = (
-            "Answer the following question based on the given study material.\n"
-            "Explain clearly and accurately.\n\n"
-            f"Study Material:\n{context}\n\n"
-            f"Question:\n{question}\n\n"
-            "Answer:"
-        )
+        """
+        Question Answering berbasis chunk untuk akurasi tinggi.
+        Menggunakan model extractive QA (RoBERTa SQuAD2).
+        """
 
-        result = self.generator(
-            prompt,
-            max_length=200,
-            do_sample=False
-        )
+        # 1. Pecah konteks panjang menjadi chunk
+        chunks = self._chunk_text(context, max_tokens=400)
 
-        return result[0]["generated_text"]
+        best_answer = ""
+        best_score = 0.0
+
+        # 2. QA per chunk
+        for chunk in chunks:
+            result = self.qa(
+                question=question,
+                context=chunk
+            )
+
+            # 3. Simpan jawaban dengan confidence tertinggi
+            if result["score"] > best_score:
+                best_score = result["score"]
+                best_answer = result["answer"]
+
+        # 4. Threshold kepercayaan
+        if best_score < 0.2 or not best_answer.strip():
+            return "Jawaban tidak ditemukan secara jelas pada materi yang diberikan."
+
+        return best_answer
 
 
     def generate_quiz(self, text: str) -> str:
