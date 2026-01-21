@@ -181,12 +181,30 @@ class StudyBuddyAI:
         return final_summary
 
 
+    # def ask(self, context: str, question: str) -> str:
+    #     result = self.qa(
+    #         question=question,
+    #         context=context
+    #     )
+    #     return result["answer"]
+    
     def ask(self, context: str, question: str) -> str:
-        result = self.qa(
-            question=question,
-            context=context
+        prompt = (
+            "Answer the following question based on the given study material.\n"
+            "Explain clearly and accurately.\n\n"
+            f"Study Material:\n{context}\n\n"
+            f"Question:\n{question}\n\n"
+            "Answer:"
         )
-        return result["answer"]
+
+        result = self.generator(
+            prompt,
+            max_length=200,
+            do_sample=False
+        )
+
+        return result[0]["generated_text"]
+
 
     def generate_quiz(self, text: str) -> str:
         prompt = (
