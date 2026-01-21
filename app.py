@@ -115,29 +115,71 @@ class StudyBuddyAI:
     #     )
     #     return result[0]["summary_text"]
     
+    # def summarize(self, text: str) -> str:
+    # # POTONG INPUT AGAR TIDAK MELEBIHI 1024 TOKEN
+    #     inputs = self.sum_tokenizer(
+    #         text,
+    #         max_length=1024,
+    #         truncation=True,
+    #         return_tensors="pt"
+    #     )
+
+    #     summary_ids = self.summarizer.model.generate(
+    #         inputs["input_ids"],
+    #         attention_mask=inputs["attention_mask"],
+    #         max_length=150,
+    #         min_length=50,
+    #         do_sample=False
+    #     )
+
+    #     summary = self.sum_tokenizer.decode(
+    #         summary_ids[0],
+    #         skip_special_tokens=True
+    #     )
+
+    #     return summary
+    
     def summarize(self, text: str) -> str:
-    # POTONG INPUT AGAR TIDAK MELEBIHI 1024 TOKEN
-        inputs = self.sum_tokenizer(
-            text,
-            max_length=1024,
-            truncation=True,
-            return_tensors="pt"
-        )
+        chunks = self._chunk_text(text)
 
-        summary_ids = self.summarizer.model.generate(
-            inputs["input_ids"],
-            attention_mask=inputs["attention_mask"],
-            max_length=150,
-            min_length=50,
-            do_sample=False
-        )
+        summaries = []
 
-        summary = self.sum_tokenizer.decode(
-            summary_ids[0],
-            skip_special_tokens=True
-        )
+        for chunk in chunks:
+            inputs = self.sum_tokenizer(
+                chunk,
+                max_length=1024,
+                truncation=True,
+                return_tensors="pt"
+            )
 
-        return summary
+            summary_ids = self.summarizer.model.generate(
+                inputs["input_ids"],
+                attention_mask=inputs["attention_mask"],
+                max_length=150,
+                min_length=50,
+                do_sample=False
+            )
+
+            summary = self.sum_tokenizer.decode(
+                summary_ids[0],
+                skip_special_tokens=True
+            )
+
+            summaries.append(summary)
+
+        # Gabungkan semua ringkasan
+        final_summary = " ".join(summaries)
+
+        if len(summaries) > 1:
+            final_summary = self.summarizer(
+                final_summary,
+                max_length=180,
+                min_length=80,
+                do_sample=False
+            )[0]["summary_text"]
+
+        return final_summary
+
 
     def ask(self, context: str, question: str) -> str:
         result = self.qa(
@@ -157,6 +199,29 @@ class StudyBuddyAI:
             do_sample=False
         )
         return result[0]["generated_text"]
+    
+    #fungsi chungking
+    def _chunk_text(self, text: str, max_tokens: int = 900):
+        """
+        Memecah teks panjang menjadi beberapa chunk token-aman
+        """
+        tokens = self.sum_tokenizer(
+            text,
+            return_tensors="pt",
+            truncation=False
+        )["input_ids"][0]
+
+        chunks = []
+        for i in range(0, len(tokens), max_tokens):
+            chunk_tokens = tokens[i:i + max_tokens]
+            chunk_text = self.sum_tokenizer.decode(
+                chunk_tokens,
+                skip_special_tokens=True
+            )
+            chunks.append(chunk_text)
+
+        return chunks
+
 
 
 # ==============================
