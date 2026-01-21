@@ -241,7 +241,7 @@ class StudyBuddyAI:
         """
 
         # ==========================
-        # 1️⃣ EXTRACTIVE QA (CHUNK)
+        # EXTRACTIVE QA (CHUNK)
         # ==========================
         chunks = self._chunk_text(context, max_tokens=400)
 
@@ -263,7 +263,7 @@ class StudyBuddyAI:
             return best_answer
 
         # ==========================
-        # 2️⃣ FALLBACK GENERATIVE QA
+        # FALLBACK GENERATIVE QA
         # ==========================
         prompt = (
             "Jawablah pertanyaan berikut berdasarkan materi di bawah ini. "
