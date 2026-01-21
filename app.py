@@ -87,6 +87,10 @@ def load_models(config: ModelConfig):
 # AI CORE LOGIC (OOP)
 # ==============================
 
+# ==============================
+# AI CORE LOGIC (OOP) - FIXED
+# ==============================
+
 class StudyBuddyAI:
     def __init__(self, config: ModelConfig):
         (
@@ -95,16 +99,13 @@ class StudyBuddyAI:
             self.generator
         ) = load_models(config)
 
-        # tokenizer khusus summarization
+        # Tokenizer untuk summarization/chunking
         self.sum_tokenizer = AutoTokenizer.from_pretrained(
             config.summarization_model
         )
-    
-    #fungsi chungking
-    def _chunk_text(self, text: str, max_tokens: int = 900):
-        """
-        Memecah teks panjang menjadi beberapa chunk token-aman
-        """
+
+    def _chunk_text(self, text: str, max_tokens: int = 512):
+        """Memecah teks panjang menjadi chunk agar aman diproses model"""
         tokens = self.sum_tokenizer(
             text,
             return_tensors="pt",
@@ -112,56 +113,54 @@ class StudyBuddyAI:
         )["input_ids"][0]
 
         chunks = []
-        for i in range(0, len(tokens), max_tokens):
+        # Overlap sedikit agar konteks tidak terputus (stride)
+        stride = 50
+        for i in range(0, len(tokens), max_tokens - stride):
             chunk_tokens = tokens[i:i + max_tokens]
             chunk_text = self.sum_tokenizer.decode(
                 chunk_tokens,
                 skip_special_tokens=True
             )
             chunks.append(chunk_text)
-
+            if i + max_tokens >= len(tokens):
+                break
         return chunks
-    def summarize(self, text: str) -> str:
-        chunks = self._chunk_text(text)
 
+    def summarize(self, text: str) -> str:
+        # Gunakan max_tokens lebih kecil agar muat di model BART
+        chunks = self._chunk_text(text, max_tokens=800)
         summaries = []
 
         for chunk in chunks:
-            inputs = self.sum_tokenizer(
-                chunk,
-                max_length=1024,
-                truncation=True,
-                return_tensors="pt"
-            )
+            # Generate summary per chunk
+            try:
+                summary_result = self.summarizer(
+                    chunk,
+                    max_length=130,
+                    min_length=30,
+                    do_sample=False
+                )
+                summaries.append(summary_result[0]['summary_text'])
+            except Exception as e:
+                continue
 
-            summary_ids = self.summarizer.model.generate(
-                inputs["input_ids"],
-                attention_mask=inputs["attention_mask"],
-                max_length=150,
-                min_length=50,
-                do_sample=False
-            )
+        full_summary = " ".join(summaries)
+        
+        # Jika hasil gabungan masih terlalu panjang, ringkas lagi sekali
+        if len(full_summary.split()) > 150:
+            try:
+                final_summary = self.summarizer(
+                    full_summary,
+                    max_length=200,
+                    min_length=50,
+                    do_sample=False
+                )[0]['summary_text']
+                return final_summary
+            except:
+                return full_summary
+        
+        return full_summary
 
-            summary = self.sum_tokenizer.decode(
-                summary_ids[0],
-                skip_special_tokens=True
-            )
-
-            summaries.append(summary)
-
-        # Gabungkan semua ringkasan
-        final_summary = " ".join(summaries)
-
-        if len(summaries) > 1:
-            final_summary = self.summarizer(
-                final_summary,
-                max_length=180,
-                min_length=80,
-                do_sample=False
-            )[0]["summary_text"]
-
-        return final_summary
-    
     def ask(self, context: str, question: str) -> str:
         """
         Smart QA Logic:
