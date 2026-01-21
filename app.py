@@ -1,13 +1,16 @@
 # =========================================
-# AI Study Buddy
-# Berisi:
-# 1. UI (Streamlit)
-# 2. Logic Aplikasi
-# 3. Class & Function (OOP)
+# AI Study Buddy (FINAL FIX VERSION)
+# Streamlit + HuggingFace + OOP
 # =========================================
 
 import streamlit as st
-from transformers import pipeline
+import torch
+from transformers import (
+    pipeline,
+    AutoTokenizer,
+    AutoModelForSeq2SeqLM,
+    AutoModelForQuestionAnswering
+)
 from dataclasses import dataclass
 
 
@@ -20,6 +23,64 @@ class ModelConfig:
     summarization_model: str = "facebook/bart-large-cnn"
     qa_model: str = "deepset/roberta-base-squad2"
     quiz_model: str = "google/flan-t5-base"
+    device: int = -1  # CPU ONLY (AMAN)
+
+
+# ==============================
+# MODEL LOADER (CACHED)
+# ==============================
+
+@st.cache_resource
+def load_models(config: ModelConfig):
+    # --- SUMMARIZATION ---
+    sum_tokenizer = AutoTokenizer.from_pretrained(
+        config.summarization_model
+    )
+    sum_model = AutoModelForSeq2SeqLM.from_pretrained(
+        config.summarization_model,
+        low_cpu_mem_usage=False
+    )
+
+    summarizer = pipeline(
+        "summarization",
+        model=sum_model,
+        tokenizer=sum_tokenizer,
+        device=config.device
+    )
+
+    # --- QUESTION ANSWERING ---
+    qa_tokenizer = AutoTokenizer.from_pretrained(
+        config.qa_model
+    )
+    qa_model = AutoModelForQuestionAnswering.from_pretrained(
+        config.qa_model,
+        low_cpu_mem_usage=False
+    )
+
+    qa_pipeline = pipeline(
+        "question-answering",
+        model=qa_model,
+        tokenizer=qa_tokenizer,
+        device=config.device
+    )
+
+    # --- QUIZ GENERATION ---
+    quiz_tokenizer = AutoTokenizer.from_pretrained(
+        config.quiz_model
+    )
+    quiz_model = AutoModelForSeq2SeqLM.from_pretrained(
+        config.quiz_model,
+        low_cpu_mem_usage=False
+    )
+
+    quiz_generator = pipeline(
+        "text2text-generation",
+        model=quiz_model,
+        tokenizer=quiz_tokenizer,
+        device=config.device
+    )
+
+    return summarizer, qa_pipeline, quiz_generator
 
 
 # ==============================
@@ -27,25 +88,56 @@ class ModelConfig:
 # ==============================
 
 class StudyBuddyAI:
+    # def __init__(self, config: ModelConfig):
+    #     (
+    #         self.summarizer,
+    #         self.qa,
+    #         self.generator
+    #     ) = load_models(config)
+
     def __init__(self, config: ModelConfig):
-        self.summarizer = pipeline(
-            "summarization", model=config.summarization_model
+        (
+            self.summarizer,
+            self.qa,
+            self.generator
+        ) = load_models(config)
+
+        # tokenizer khusus summarization
+        self.sum_tokenizer = AutoTokenizer.from_pretrained(
+            config.summarization_model
         )
-        self.qa = pipeline(
-            "question-answering", model=config.qa_model
-        )
-        self.generator = pipeline(
-            "text2text-generation", model=config.quiz_model
+    # def summarize(self, text: str) -> str:
+    #     result = self.summarizer(
+    #         text,
+    #         max_length=150,
+    #         min_length=50,
+    #         do_sample=False
+    #     )
+    #     return result[0]["summary_text"]
+    
+    def summarize(self, text: str) -> str:
+    # POTONG INPUT AGAR TIDAK MELEBIHI 1024 TOKEN
+        inputs = self.sum_tokenizer(
+            text,
+            max_length=1024,
+            truncation=True,
+            return_tensors="pt"
         )
 
-    def summarize(self, text: str) -> str:
-        result = self.summarizer(
-            text,
+        summary_ids = self.summarizer.model.generate(
+            inputs["input_ids"],
+            attention_mask=inputs["attention_mask"],
             max_length=150,
             min_length=50,
             do_sample=False
         )
-        return result[0]["summary_text"]
+
+        summary = self.sum_tokenizer.decode(
+            summary_ids[0],
+            skip_special_tokens=True
+        )
+
+        return summary
 
     def ask(self, context: str, question: str) -> str:
         result = self.qa(
@@ -56,7 +148,7 @@ class StudyBuddyAI:
 
     def generate_quiz(self, text: str) -> str:
         prompt = (
-            "Create 5 short quiz questions based on the following study material:\n"
+            "Create 5 short quiz questions based on this material:\n"
             f"{text}"
         )
         result = self.generator(
@@ -83,7 +175,8 @@ st.write(
     "**tanya jawab**, dan **membuat kuis otomatis**."
 )
 
-# Initialize AI
+st.info("📌 Model berjalan di CPU untuk stabilitas maksimum.")
+
 config = ModelConfig()
 ai = StudyBuddyAI(config)
 
@@ -93,13 +186,9 @@ material = st.text_area(
     height=250
 )
 
-# Optional safety check
-if material and len(material.split()) > 800:
-    st.warning(
-        "Materi cukup panjang. Untuk hasil terbaik, "
-        "pertimbangkan merangkum sebagian terlebih dahulu."
-    )
-
+# if len(material.split()) > 800:
+#     st.warning("Materi terlalu panjang, akan dipotong otomatis.")
+    
 st.divider()
 
 col1, col2, col3 = st.columns(3)
@@ -116,9 +205,7 @@ with col1:
 
 # --------- QUESTION ANSWERING ---------
 with col2:
-    question = st.text_input(
-        "💬 Masukkan pertanyaan tentang materi"
-    )
+    question = st.text_input("💬 Masukkan pertanyaan")
 
     if st.button("Tanya AI"):
         if material.strip() and question.strip():
@@ -126,9 +213,7 @@ with col2:
                 answer = ai.ask(material, question)
                 st.info(answer)
         else:
-            st.warning(
-                "Materi dan pertanyaan tidak boleh kosong."
-            )
+            st.warning("Materi dan pertanyaan tidak boleh kosong.")
 
 # --------- QUIZ GENERATION ---------
 with col3:
@@ -141,6 +226,4 @@ with col3:
             st.warning("Materi tidak boleh kosong.")
 
 st.divider()
-st.caption(
-    "Final Project AI | Streamlit + HuggingFace Transformers"
-)
+st.caption("Final Project AI | Streamlit + HuggingFace Transformers")
