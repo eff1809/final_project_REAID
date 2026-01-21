@@ -83,18 +83,12 @@ def load_models(config: ModelConfig):
     return summarizer, qa_pipeline, quiz_generator
 
 
+
 # ==============================
-# AI CORE LOGIC (OOP)
+# AI CORE LOGIC (OOP) - FIXED
 # ==============================
 
 class StudyBuddyAI:
-    # def __init__(self, config: ModelConfig):
-    #     (
-    #         self.summarizer,
-    #         self.qa,
-    #         self.generator
-    #     ) = load_models(config)
-
     def __init__(self, config: ModelConfig):
         (
             self.summarizer,
@@ -102,121 +96,13 @@ class StudyBuddyAI:
             self.generator
         ) = load_models(config)
 
-        # tokenizer khusus summarization
+        # Tokenizer untuk summarization/chunking
         self.sum_tokenizer = AutoTokenizer.from_pretrained(
             config.summarization_model
         )
-    # def summarize(self, text: str) -> str:
-    #     result = self.summarizer(
-    #         text,
-    #         max_length=150,
-    #         min_length=50,
-    #         do_sample=False
-    #     )
-    #     return result[0]["summary_text"]
-    
-    # def summarize(self, text: str) -> str:
-    # # POTONG INPUT AGAR TIDAK MELEBIHI 1024 TOKEN
-    #     inputs = self.sum_tokenizer(
-    #         text,
-    #         max_length=1024,
-    #         truncation=True,
-    #         return_tensors="pt"
-    #     )
 
-    #     summary_ids = self.summarizer.model.generate(
-    #         inputs["input_ids"],
-    #         attention_mask=inputs["attention_mask"],
-    #         max_length=150,
-    #         min_length=50,
-    #         do_sample=False
-    #     )
-
-    #     summary = self.sum_tokenizer.decode(
-    #         summary_ids[0],
-    #         skip_special_tokens=True
-    #     )
-
-    #     return summary
-    
-    def summarize(self, text: str) -> str:
-        chunks = self._chunk_text(text)
-
-        summaries = []
-
-        for chunk in chunks:
-            inputs = self.sum_tokenizer(
-                chunk,
-                max_length=1024,
-                truncation=True,
-                return_tensors="pt"
-            )
-
-            summary_ids = self.summarizer.model.generate(
-                inputs["input_ids"],
-                attention_mask=inputs["attention_mask"],
-                max_length=150,
-                min_length=50,
-                do_sample=False
-            )
-
-            summary = self.sum_tokenizer.decode(
-                summary_ids[0],
-                skip_special_tokens=True
-            )
-
-            summaries.append(summary)
-
-        # Gabungkan semua ringkasan
-        final_summary = " ".join(summaries)
-
-        if len(summaries) > 1:
-            final_summary = self.summarizer(
-                final_summary,
-                max_length=180,
-                min_length=80,
-                do_sample=False
-            )[0]["summary_text"]
-
-        return final_summary
-
-
-    # def ask(self, context: str, question: str) -> str:
-    #     result = self.qa(
-    #         question=question,
-    #         context=context
-    #     )
-    #     return result["answer"]
-    
-# def ask(self, context: str, question: str) -> str:
-#     # Batasi konteks agar tidak terlalu panjang
-#     inputs = self.qa.tokenizer(
-#         context,
-#         max_length=512,
-#         truncation=True,
-#         return_tensors="pt"
-#     )
-
-#     truncated_context = self.qa.tokenizer.decode(
-#         inputs["input_ids"][0],
-#         skip_special_tokens=True
-#     )
-
-#     result = self.qa(
-#         question=question,
-#         context=truncated_context
-#     )
-
-#     if result["score"] < 0.2:
-#         return "Jawaban tidak ditemukan secara jelas pada materi yang diberikan."
-
-#     return result["answer"]
-
-    #fungsi chungking
-    def _chunk_text(self, text: str, max_tokens: int = 900):
-        """
-        Memecah teks panjang menjadi beberapa chunk token-aman
-        """
+    def _chunk_text(self, text: str, max_tokens: int = 512):
+        """Memecah teks panjang menjadi chunk agar aman diproses model"""
         tokens = self.sum_tokenizer(
             text,
             return_tensors="pt",
@@ -224,77 +110,134 @@ class StudyBuddyAI:
         )["input_ids"][0]
 
         chunks = []
-        for i in range(0, len(tokens), max_tokens):
+        # Overlap sedikit agar konteks tidak terputus (stride)
+        stride = 50
+        for i in range(0, len(tokens), max_tokens - stride):
             chunk_tokens = tokens[i:i + max_tokens]
             chunk_text = self.sum_tokenizer.decode(
                 chunk_tokens,
                 skip_special_tokens=True
             )
             chunks.append(chunk_text)
-
+            if i + max_tokens >= len(tokens):
+                break
         return chunks
+
+    def summarize(self, text: str) -> str:
+        # Gunakan max_tokens lebih kecil agar muat di model BART
+        chunks = self._chunk_text(text, max_tokens=800)
+        summaries = []
+
+        for chunk in chunks:
+            # Generate summary per chunk
+            try:
+                summary_result = self.summarizer(
+                    chunk,
+                    max_length=130,
+                    min_length=30,
+                    do_sample=False
+                )
+                summaries.append(summary_result[0]['summary_text'])
+            except Exception as e:
+                continue
+
+        full_summary = " ".join(summaries)
+        
+        # Jika hasil gabungan masih terlalu panjang, ringkas lagi sekali
+        if len(full_summary.split()) > 150:
+            try:
+                final_summary = self.summarizer(
+                    full_summary,
+                    max_length=200,
+                    min_length=50,
+                    do_sample=False
+                )[0]['summary_text']
+                return final_summary
+            except:
+                return full_summary
+        
+        return full_summary
+
     def ask(self, context: str, question: str) -> str:
         """
-        Hybrid Question Answering:
-        1. Extractive QA (akurasi tinggi dari materi)
-        2. Fallback ke Generative QA (jika tidak ditemukan)
+        Smart QA Logic:
+        1. Coba cari jawaban persis di teks (Extractive).
+        2. Jika score rendah, gunakan Generative AI (LLM) dengan instruksi yang lebih tegas.
         """
-
-        # ==========================
-        # EXTRACTIVE QA (CHUNK)
-        # ==========================
-        chunks = self._chunk_text(context, max_tokens=400)
-
+        
+        # --- LANGKAH 1: EXTRACTIVE QA ---
+        # Kita pecah context jadi chunk kecil untuk RoBERTa
+        chunks = self._chunk_text(context, max_tokens=350)
         best_answer = ""
         best_score = 0.0
 
         for chunk in chunks:
-            result = self.qa(
-                question=question,
-                context=chunk
-            )
+            try:
+                result = self.qa(
+                    question=question,
+                    context=chunk
+                )
+                if result["score"] > best_score:
+                    best_score = result["score"]
+                    best_answer = result["answer"]
+            except:
+                continue
 
-            if result["score"] > best_score:
-                best_score = result["score"]
-                best_answer = result["answer"]
+        # Ambang batas (Threshold):
+        # Jika score > 0.5, kita cukup yakin jawabannya ada di teks.
+        # Jika di bawah itu, kemungkinan jawabannya butuh pengetahuan umum/generatif.
+        if best_score > 0.5:
+            return f"Berdasarkan materi: {best_answer}"
 
-        # Jika ketemu jawaban yang cukup yakin → KEMBALIKAN
-        if best_score >= 0.2 and best_answer.strip():
-            return best_answer
-
-        # ==========================
-        # FALLBACK GENERATIVE QA
-        # ==========================
+        # --- LANGKAH 2: GENERATIVE QA (FALLBACK) ---
+        # Kita gunakan FLAN-T5 jika jawaban tidak ketemu di teks secara eksplisit
+        
+        # Potong context agar tidak error di T5 (max 512 tokens input)
+        # Kita ambil chunk pertama atau gabungan awal saja sebagai referensi
+        truncated_context = context[:2000] # Ambil 2000 karakter pertama kira-kira
+        
+        # PROMPT ENGINEERING YANG DIPERBAIKI
+        # Kita pisahkan instruksi dengan jelas agar model tidak mengulang teks
         prompt = (
-            "Jawablah pertanyaan berikut berdasarkan materi di bawah ini. "
-            "Jika tidak tertulis secara eksplisit, gunakan pengetahuan umum "
-            "yang relevan dengan tetap konsisten dengan konteks pembelajaran.\n\n"
-            f"Materi:\n{context}\n\n"
+            f"Instruksi: Jawab pertanyaan berikut dengan singkat dan jelas dalam Bahasa Indonesia. "
+            f"Gunakan informasi dari Teks Referensi jika relevan. "
+            f"Jika jawaban tidak ada di teks, gunakan pengetahuan umum.\n\n"
+            f"Teks Referensi:\n{truncated_context}\n\n"
             f"Pertanyaan:\n{question}\n\n"
-            "Jawaban:"
+            f"Jawaban:"
         )
 
-        gen_result = self.generator(
-            prompt,
-            max_length=256,
-            do_sample=False
-        )
-
-        return gen_result[0]["generated_text"].strip()
-
+        try:
+            gen_result = self.generator(
+                prompt,
+                max_length=200,     # Beri ruang untuk jawaban panjang
+                do_sample=True,     # Sedikit variasi agar lebih natural
+                temperature=0.3,    # Rendah agar tetap faktual
+                repetition_penalty=1.2 # PENTING: Mencegah pengulangan teks input
+            )
+            return gen_result[0]["generated_text"]
+        except Exception as e:
+            return "Maaf, saya tidak dapat menemukan jawaban yang relevan."
 
     def generate_quiz(self, text: str) -> str:
+        # Ambil ringkasan/potongan teks agar tidak terlalu panjang buat prompt
+        short_text = text[:1500] 
+        
         prompt = (
-            "Create 5 short quiz questions based on this material:\n"
-            f"{text}"
+            "Buatkan 3 soal kuis pilihan ganda singkat berdasarkan teks berikut dalam Bahasa Indonesia:\n\n"
+            f"{short_text}"
         )
-        result = self.generator(
-            prompt,
-            max_length=256,
-            do_sample=False
-        )
-        return result[0]["generated_text"]
-    
+        
+        try:
+            result = self.generator(
+                prompt,
+                max_length=300,
+                do_sample=True,
+                temperature=0.5
+            )
+            return result[0]["generated_text"]
+        except:
+            return "Gagal membuat kuis."
     
 
 
