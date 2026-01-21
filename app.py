@@ -212,50 +212,6 @@ class StudyBuddyAI:
 
 #     return result["answer"]
 
-
-    def ask(self, context: str, question: str) -> str:
-        """
-        Question Answering berbasis chunk untuk akurasi tinggi.
-        Menggunakan model extractive QA (RoBERTa SQuAD2).
-        """
-
-        # 1. Pecah konteks panjang menjadi chunk
-        chunks = self._chunk_text(context, max_tokens=400)
-
-        best_answer = ""
-        best_score = 0.0
-
-        # 2. QA per chunk
-        for chunk in chunks:
-            result = self.qa(
-                question=question,
-                context=chunk
-            )
-
-            # 3. Simpan jawaban dengan confidence tertinggi
-            if result["score"] > best_score:
-                best_score = result["score"]
-                best_answer = result["answer"]
-
-        # 4. Threshold kepercayaan
-        if best_score < 0.2 or not best_answer.strip():
-            return "Jawaban tidak ditemukan secara jelas pada materi yang diberikan."
-
-        return best_answer
-
-
-    def generate_quiz(self, text: str) -> str:
-        prompt = (
-            "Create 5 short quiz questions based on this material:\n"
-            f"{text}"
-        )
-        result = self.generator(
-            prompt,
-            max_length=256,
-            do_sample=False
-        )
-        return result[0]["generated_text"]
-    
     #fungsi chungking
     def _chunk_text(self, text: str, max_tokens: int = 900):
         """
@@ -277,6 +233,69 @@ class StudyBuddyAI:
             chunks.append(chunk_text)
 
         return chunks
+    def ask(self, context: str, question: str) -> str:
+        """
+        Hybrid Question Answering:
+        1. Extractive QA (akurasi tinggi dari materi)
+        2. Fallback ke Generative QA (jika tidak ditemukan)
+        """
+
+        # ==========================
+        # 1️⃣ EXTRACTIVE QA (CHUNK)
+        # ==========================
+        chunks = self._chunk_text(context, max_tokens=400)
+
+        best_answer = ""
+        best_score = 0.0
+
+        for chunk in chunks:
+            result = self.qa(
+                question=question,
+                context=chunk
+            )
+
+            if result["score"] > best_score:
+                best_score = result["score"]
+                best_answer = result["answer"]
+
+        # Jika ketemu jawaban yang cukup yakin → KEMBALIKAN
+        if best_score >= 0.2 and best_answer.strip():
+            return best_answer
+
+        # ==========================
+        # 2️⃣ FALLBACK GENERATIVE QA
+        # ==========================
+        prompt = (
+            "Jawablah pertanyaan berikut berdasarkan materi di bawah ini. "
+            "Jika tidak tertulis secara eksplisit, gunakan pengetahuan umum "
+            "yang relevan dengan tetap konsisten dengan konteks pembelajaran.\n\n"
+            f"Materi:\n{context}\n\n"
+            f"Pertanyaan:\n{question}\n\n"
+            "Jawaban:"
+        )
+
+        gen_result = self.generator(
+            prompt,
+            max_length=256,
+            do_sample=False
+        )
+
+        return gen_result[0]["generated_text"].strip()
+
+
+    def generate_quiz(self, text: str) -> str:
+        prompt = (
+            "Create 5 short quiz questions based on this material:\n"
+            f"{text}"
+        )
+        result = self.generator(
+            prompt,
+            max_length=256,
+            do_sample=False
+        )
+        return result[0]["generated_text"]
+    
+    
 
 
 
