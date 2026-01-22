@@ -1,7 +1,6 @@
-#untuk:
-# Deployment 
-# agar lebih profesional
-
-streamlit
-transformers
-torch
+streamlit==1.31.1
+torch==2.1.2
+transformers==4.36.2
+sentencepiece
+protobuf<4
+accelerate
