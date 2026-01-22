@@ -1,9 +1,9 @@
 # 📚 AI Study Buddy
 
 ## 👤 Identitas Project
-- **Nama**          : Efraim Parasak  
-- **Final Project** : AI Study Buddy  
-- **Program**       : AI Python Bootcamp  
+- **Nama**          : Efraim Imanuel Parasak
+- **Final Project** : AI Study Buddy
+- **Program**       : AI Python Bootcamp
 
 ---
 
@@ -23,13 +23,13 @@ pada penerapan **Natural Language Processing (NLP)** dan **Large Language Models
 ---
 
 ## Live App
-**Live Demo:**  
+**Live Demo:**
 https://finalprojectreaid-aipythonbootcampskillacademy.streamlit.app/
 
 ---
 
 ## GitHub Repository
-**Source Code:**  
+**Source Code:**
 https://github.com/eff1809/final_project_REAID
 
 ---
