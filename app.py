@@ -221,41 +221,18 @@ class StudyBuddyAI:
             return gen_result[0]["generated_text"]
         except Exception as e:
             return "Maaf, saya tidak dapat menemukan jawaban yang relevan."
-
+    
     def generate_quiz(self, text: str) -> str:
-        # Ambil ringkasan/potongan teks agar tidak terlalu panjang buat prompt
-        short_text = text[:1500] 
-        
         prompt = (
-            "Buatkan 3 soal kuis pilihan ganda singkat berdasarkan teks berikut dalam Bahasa Indonesia:\n\n"
-            f"{short_text}"
+            "Create 5 short quiz questions based on this material:\n"
+            f"{text}"
         )
-        
-        try:
-            result = self.generator(
-                prompt,
-                max_length=300,
-                do_sample=True,
-                temperature=0.5
-            )
-            return result[0]["generated_text"]
-        except:
-            return "Gagal membuat kuis."
-
-
-    # def generate_quiz(self, text: str) -> str:
-    #     prompt = (
-    #         "Create 5 short quiz questions based on this material:\n"
-    #         f"{text}"
-    #     )
-    #     result = self.generator(
-    #         prompt,
-    #         max_length=256,
-    #         do_sample=False
-    #     )
-    #     return result[0]["generated_text"]
-    
-    
+        result = self.generator(
+            prompt,
+            max_length=256,
+            do_sample=False
+        )
+        return result[0]["generated_text"]
 
 
 
